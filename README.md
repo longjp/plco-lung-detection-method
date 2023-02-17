@@ -6,8 +6,10 @@ This repository contains code used to produce plots and tables in the manuscript
 
 This study was conducted under [PLCO Project 808](https://cdas.cancer.gov/approved-projects/3140/)
 
-<img align="center" src="km-example.png">
-
+<center>
+<img align="center" src="km-example.png",width=50%>
+</center>
+  
 ## Code and Output
 
 * Code to generate all figures and tables in the manuscript is contained in the file:
