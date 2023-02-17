@@ -9,20 +9,15 @@ This study was conducted under [PLCO Project 808](https://cdas.cancer.gov/approv
 
 ## Code and Output
 
-Code to generate all figures and tables in the manuscript is contained in the file:
-
+* Code to generate all figures and tables in the manuscript is contained in the file:
 ```
 reports-code/20230126-plco-lung-report.Rmd
 ```
-
-This code creates a .html file and outputs figures and tables to the folder:
-
+* This code creates a .html file and outputs figures and tables to the folder:
 ```
 reports-code/20230126-plco-lung-report/
 ```
-
-Data (see below for instruction on how to obtain it) should be placed in folder
-
+* Data (see below for instruction on how to obtain it) should be placed in folder
 ```
 data/
 ```
