@@ -1,10 +1,10 @@
-# plco-lung-detection-method
+# Prognostic Value of Method of Detection in Lung Cancer
 
-The repository contains code used to produce plots and tables in the manuscript 
+This repository contains code used to produce plots and tables in the manuscript 
 
-```Independent Prognostic Value of Detection Method in Lung Cancer: Analysis of the PLCO Lung Screening Trial" by James P. Long and Yu Shen. 2023+.```
+**Independent Prognostic Value of Detection Method in Lung Cancer: Analysis of the PLCO Lung Screening Trial" by James P. Long and Yu Shen. 2023+.**
 
-This study was conducted as part of [PLCO Project 808](https://cdas.cancer.gov/approved-projects/3140/)
+This study was conducted under [PLCO Project 808](https://cdas.cancer.gov/approved-projects/3140/)
 
 
 ## Code and Output
@@ -21,6 +21,11 @@ This code creates a .html file and outputs figures and tables to the folder:
 20230126-plco-lung-report/
 ```
 
+Data (see below for instruction on how to obtain it) should be placed in folder
+
+```
+data/
+```
 
 ## Obtaining the Data
 
