@@ -1,0 +1,694 @@
+---
+title: "PLCO Lung Analysis"
+author: "James Long"
+always_allow_html: yes
+date: "`r Sys.Date()`"
+bibliography: refs.bib
+output:
+  html_document:
+    theme: united
+    toc: yes
+    toc_collapsed: yes
+    toc_float: yes
+---
+
+```{r alternative-preambles,echo=FALSE,include=FALSE,eval=FALSE}
+output:
+  html_document:
+    theme: united
+    toc: yes
+    toc_collapsed: yes
+    toc_float: yes
+
+
+
+## if using word replace output with
+output:
+  word_document:
+    toc: yes
+
+## if using pdf replace output with
+output:
+  pdf_document:
+    toc: yes
+header-includes:
+  - \usepackage{xcolor}
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+## colorizes text when using html or pdf output
+## just spits out text x for word
+colorize <- function(x, color) {
+  if(color=="todo"){
+    color <- "red"
+    x <- paste0("TODO: ",x)
+  }
+  if (knitr::is_latex_output()) {
+    sprintf("\\textcolor{%s}{%s}", color, x)
+  } else if (knitr::is_html_output()) {
+    sprintf("<span style='color: %s;'>%s</span>", color, 
+      x)
+  } else x
+}
+
+todo <- function(x){
+  paste0("**",colorize(x,"todo"),"**")
+}
+
+set.seed(20230126)
+library(gtsummary)
+library(ggplot2)
+library(survival)
+library(survminer)
+library(kableExtra)
+library(randomForestSRC)
+library(cowplot)
+#library(huxtable)
+
+outf <- "20230126-plco-lung-report/"
+unlink(outf,recursive=TRUE)
+dir.create(outf,recursive=TRUE)
+```
+
+
+```{r}
+## load data and recode several variables
+fname <- "../data/package-plco-808.2022-12-25/Lung/lung_data_mar22_d032222.csv"
+dat <- read.csv(fname)
+
+
+#table(dat$arm,useNA="always")
+
+dat$armf <- NA_character_
+dat$armf[dat$arm==1] <- "Intervention"
+dat$armf[dat$arm==2] <- "Control"
+
+dat$center <- as.factor(dat$center)
+dat$fstcan_exitstat <- as.factor(dat$fstcan_exitstat)
+
+
+## category names for type of detection
+temp <- rep(NA_character_,nrow(dat))
+temp[dat$intstatl_cat==0] <- "No Cancer"
+temp[dat$intstatl_cat==1] <- "Control"
+temp[dat$intstatl_cat==2] <- "Other"
+temp[dat$intstatl_cat==3] <- "Other"
+temp[dat$intstatl_cat==4] <- "Interval"
+temp[dat$intstatl_cat==5] <- "Screen"
+dat$Detection <- factor(temp,
+                       levels=c("Screen","Interval",
+                                "Control","Other",
+                                "No Cancer"))
+#table(dat$Detection,dat$intstatl_cat)
+
+## category names for age level
+temp <- rep(NA_character_,nrow(dat))
+temp[dat$agelevel==0] <- "<=59"
+temp[dat$agelevel==1] <- "60-64"
+temp[dat$agelevel==2] <- "65-69"
+temp[dat$agelevel==3] <- ">=70"
+temp <- factor(temp,levels=c("<=59","60-64","65-69",">=70"))
+dat$Age <- temp
+
+
+## recode lung hist type category
+recode <- c("Small cell carcinoma",
+            "Adenocarcinoma",
+            "Bronchiolo-alveolar",
+            "Squamous cell",
+            "Large cell",
+            "Other NSC",
+            "Carcinoma, NOS",
+            "Other/Unknown")
+names(recode) <- as.character(c(1,2,3,4,5,6,8,9))
+temp <- recode[as.character(dat$lung_histtype_cat)]
+temp <- factor(temp,levels=recode)
+#table(temp,dat$lung_histtype_cat,useNA="always")
+#table(temp,dat$lung_cancer,useNA="always")
+dat$Histology <- temp
+
+## category names for lung cancer (yes/no)
+temp <- rep(NA_character_,nrow(dat))
+temp[dat$lung_cancer==1] <- "Yes"
+temp[dat$lung_cancer==0] <- "No"
+dat$lung_cancer <- as.factor(temp)
+
+
+
+#table(dat$Detection,dat$intstatl_cat)
+#table(dat$Detection,dat$arm)
+#table(dat$Detection,dat$lung_cancer)
+
+
+## make stage a factor
+temp <- rep(NA_character_,nrow(dat))
+temp[dat$lung_stage<150] <- "Stage I"
+temp[dat$lung_stage>150 & dat$lung_stage < 250] <- "Stage II"
+temp[dat$lung_stage>250 & dat$lung_stage < 350] <- "Stage III"
+temp[dat$lung_stage==400] <- "Stage IV"
+temp[dat$lung_stage==993] <- "Small Cell"
+temp[is.na(dat$lung_stage) & dat$lung_cancer=="Yes"] <- "Unknown"
+#table(temp,dat$lung_stage,useNA="always")
+dat$Stage <- factor(temp,levels=c("Stage I","Stage II","Stage III","Stage IV","Small Cell","Unknown"))
+#table(dat$Stage,dat$lung_stage,useNA="always")
+
+
+
+
+## update sex variable
+temp <- rep(NA_character_,nrow(dat))
+temp[dat$sex==1] <- "Male"
+temp[dat$sex==2] <- "Female"
+#table(dat$sex,temp)
+dat$sex <- factor(temp)
+colnames(dat)[colnames(dat)=="sex"] <- "Sex"
+
+
+recode <- c("Grade I",
+            "Grade II",
+            "Grade III",
+            "Grade IV",
+            "Other/Unknown",
+            "Other/Unknown")
+names(recode) <- as.character(c(1,2,3,4,5,9))
+temp <- recode[dat$lung_grade]
+temp[dat$lung_cancer=="Yes" & is.na(temp)] <- "Other/Unknown"
+dat$Grade <- temp
+#table(dat$Grade,dat$lung_grade,useNA="always")
+#table(dat$Grade,dat$lung_cancer,useNA="always")
+
+
+
+
+# get cigarette smoking
+#table(dat$cig_stat,useNA="always")
+Smoked <- rep(NA_character_,nrow(dat))
+Smoked[dat$cig_stat==0] <- "No"
+Smoked[dat$cig_stat==1] <- "Yes"
+Smoked[dat$cig_stat==2] <- "Yes"
+Smoked[is.na(dat$cig_stat)] <- "Unknown"
+dat$Smoked <- factor(Smoked,levels=c("No","Yes","Unknown"))
+#table(dat$cig_stat,dat$Smoked,useNA="always")
+
+# compute number of days from detection to death
+# will be missing for patients who did not have
+# lung cancer (very common)
+dat$DD_years <- (dat$mortality_exitdays-dat$lung_cancer_diagdays)/365.25
+
+
+## everyone is known to be alive or dead
+## if alive, reason for death is always missing
+## id dead, rarely is cause of death missing
+#table(dat$d_cancersite,dat$is_dead,useNA="always")
+#table(dat$d_cancersite==2,dat$lung_cancer,useNA="always")
+#table(dat$d_cancersite[dat$lung_cancer=="Yes"],useNA="always")
+
+
+## create variable which indicates if death is due to lung cancer
+died_lung_cancer <- rep("Other Death",nrow(dat))
+died_lung_cancer[dat$is_dead==0] <- "Alive"
+died_lung_cancer[dat$d_cancersite==2] <- "Lung Cancer Death"
+dat$died_lung_cancer <- died_lung_cancer
+
+
+## x-axis limits for survival plots
+xlims <- c(0,10)
+break.x.by <- 2
+
+
+## define custom test so that can compute p-values for categorical variables
+## when one category level has limited data (so asymptotic not appropriate)
+## and another category level has a lot of data (so exact computations too expensive)
+## see: https://stackoverflow.com/questions/61360954/error-in-add-p-for-variable-x-and-test-fisher-test-p-value-omitted
+fisher.test.simulate.p.values <- function(data, variable, by, ...) {
+  result <- list()
+  test_results <- stats::fisher.test(data[[variable]], data[[by]], simulate.p.value = TRUE)
+  result$p <- test_results$p.value
+  result$test <- test_results$method
+  result
+}
+```
+
+```{r}
+### determine longest follow up time
+summary(dat$DD_years)
+
+
+summary(dat$lung_cancer_diagdays/365.25)
+```
+
+
+## Intervention versus Control Demographic Table
+
+```{r message=FALSE}
+add_p_ex1 <-
+  dat[c("Age","armf","Sex","lung_cancer","Detection","Stage","Grade","pack_years","Smoked")] %>%
+  tbl_summary(by = armf) %>%
+  add_p(test = list(all_categorical() ~ "fisher.test.simulate.p.values"))    
+add_p_ex1
+```
+
+### Follow up
+
+```{r,fig.height=4,fig.width=4,fig.align='center'}
+hist(dat$mortality_exitdays,xlab="Follow up Time (Days)",main="")
+```
+
+The median follow up time is `r round(median(dat$mortality_exitdays))` days.
+
+### Overall Survival
+
+Similar overall survival between the two groups.
+
+```{r}
+fit  <- survfit(Surv(mortality_exitdays,is_dead)~armf,data=dat)
+p <- ggsurvplot(fit,data=dat,risk.table=TRUE,ylim=c(0,1),legend.labs=levels(dat$armf),
+                legend.title="",pval=TRUE,legend="none",xlim=c(0,4000),break.x.by=1000)
+p[[1]] <- p[[1]] + theme_grey() + theme(legend.position="none") + xlab("Time (days)")
+print(p)
+```
+
+
+
+```{r}
+##### cohort: all patients diagnosed with NSCLC with staging
+## select patients with lung cancer
+dat_sub <- dat[dat$lung_cancer=="Yes",]
+## select patients with known stage
+dat_sub <- dat_sub[dat_sub$Stage!="Unknown",]
+## select patients who do not have small cell
+dat_sub <- dat_sub[!(dat_sub$lung_cancer_type==2),]
+
+
+
+dat_sub$Stage <- factor(as.character(dat_sub$Stage),
+                        levels=c("Stage I","Stage II","Stage III","Stage IV"))
+dat_sub$Detection <- factor(as.character(dat_sub$Detection),
+                     levels=c("Screen","Interval","Other","Control"))
+
+levs <- levels(dat_sub$Histology)
+levs <- levs[levs %in% dat_sub$Histology]
+dat_sub$Histology <- factor(as.character(dat_sub$Histology),levels=levs)
+
+
+## features for modeling
+resp <- "Surv(DD_years,is_dead)"
+feats <- c("Detection","Stage","Age","Sex","Smoked","Histology")
+```
+
+
+## Cancer Cases
+
+We now subset to patients with Non-small cell lung cancer (NSCLC) who have Stage information. The variable Detection takes a value based on how the cancer was detected.
+
+* Screen: Patient was in intervention arm and tumor was detected during screening
+* Interval: Patient was in intervention arm and tumor was detected between screenings
+* Other: Other Intervention includes all patients diagnosed in Intervention Arm who are not in the Screen or Interval Category. This includes patients who
+    * Never attended any screenings
+    * Were diagnosed with cancer after screening period ended (Post)
+* Control: Patient was in control arm
+
+There is evidence of phase shift when one compares the distribution of Stage I vs. IV cancers in Screen detected versus other detection methods.
+
+### Lung Cancer Deaths
+
+Among patients diagnosed with lung cancer, we compute the fraction that died from lung cancer, fraction died from other causes, and the fraction still alive.
+
+```{r}
+tab <- table(dat_sub$died_lung_cancer)/nrow(dat_sub)
+tab <- as.data.frame(tab)
+colnames(tab) <- c("Cause of Death","Fraction")
+kbl(tab) %>%
+  kable_paper(bootstrap_options="striped",full_width = F)
+```
+
+
+### Lung Cancer Case Summary
+
+```{r message=FALSE}
+add_p_ex1 <-
+  dat_sub[feats] %>%
+  tbl_summary(by = Detection) %>%
+  add_p(test = list(all_categorical() ~ "fisher.test.simulate.p.values"))
+add_p_ex1
+
+## create huxtable for output
+ht <- as_hux_table(add_p_ex1)
+huxtable::bottom_padding(ht) <- 0
+huxtable::top_padding(ht) <- 0
+huxtable::right_padding(ht) <- 0
+#huxtable::left_padding(ht) <- 0
+huxtable::caption(ht) <- "Characteristics of Lung cancers detected in PLCO by Detection Method for Extended Cohort."
+huxtable::label(ht) <- "tab:table1"
+huxtable::number_format(ht) <- NA
+
+## convert to latex
+ht_latex <- ht %>% huxtable::to_latex()
+## remove some formatting
+ht_latex <- gsub("```{=latex}","",ht_latex,fixed=TRUE)
+ht_latex <- gsub("```","",ht_latex,fixed=TRUE)
+cat(ht_latex,file=paste0(outf,"table1.tex"))
+```
+
+
+
+### Lung Cancer Survival
+
+Survival is better for screen detected.
+
+
+```{r fig.height=6.5,fig.width=7,align="center"}
+fit  <- survfit(Surv(DD_years,is_dead)~Detection,data=dat_sub)
+p1 <- ggsurvplot(fit,data=dat_sub,risk.table=TRUE,ylim=c(0,1),legend.labs=levels(dat_sub$Detection),
+                legend.title="",pval = TRUE,legend="none",pval.coord=c(6,0.8),
+                xlim=xlims,break.x.by=break.x.by)
+p1[[1]] <- p1[[1]] + theme_grey() + theme(legend.position="top") + xlab("Time (years)")
+print(p1)
+
+pdf(paste0(outf,"km-overall.pdf"),width=6,height=7,onefile=FALSE)
+print(p1)
+invisible(dev.off())
+```
+
+
+### Lung Cancer Survival by Stage
+
+Survival is better for screen detected after controlling for stage.
+
+```{r fig.width=6,fig.height=6,message=FALSE,warning=FALSE,fig.align="center"}
+fit  <- survfit(Surv(DD_years,is_dead)~Detection,data=dat_sub)
+p2 <- ggsurvplot_facet(fit,data=dat_sub,risk.table=TRUE,ylim=c(0,1),short.panel.labs=TRUE,
+                legend.title="",pval = TRUE,facet.by="Stage",pval.coord=c(6,0.8),
+                break.x.by=break.x.by,xlim=xlims)
+p2 <- p2 + theme_grey() + theme(legend.position="top") + xlab("Time (years)")
+print(p2)
+
+pdf(paste0(outf,"km-bystage.pdf"),width=6,height=6)
+print(p2)
+invisible(dev.off())
+```
+
+```{r}
+p <- plot_grid(p1$plot, p2, labels = c('a)', 'b)'), label_size = 12)
+pdf(paste0(outf,"km-merged.pdf"),width=10,height=5)
+print(p)
+invisible(dev.off())
+```
+
+```{r}
+## what fraction of lung cancer patients die of disease
+table(dat_sub$died_lung_cancer)/nrow(dat_sub)
+```
+
+### Prediction Models
+
+Fit Cox PH model to predict survival. Detection Method is significant even after controlling for age, stage, histology, etc.
+
+```{r}
+fm <- as.formula(paste0(resp,"~",paste0(feats,collapse="+")))
+fit <- coxph(fm,data=dat_sub)
+out <- tbl_regression(fit)
+out
+
+
+ht <- as_hux_table(out)
+huxtable::bottom_padding(ht) <- 0
+huxtable::top_padding(ht) <- 0
+huxtable::right_padding(ht) <- 0
+huxtable::top_padding(ht) <- 0
+huxtable::caption(ht) <- "Multivariate Cox PH model to predict overall survival following diagnosis with lung cancer. Model is fit on Extended Cohort."
+huxtable::label(ht) <- "tab:coxph-fit"
+
+
+## convert to latex
+ht_latex <- ht %>% huxtable::to_latex()
+## remove some formatting
+ht_latex <- gsub("```{=latex}","",ht_latex,fixed=TRUE)
+ht_latex <- gsub("```","",ht_latex,fixed=TRUE)
+cat(ht_latex,file=paste0(outf,"coxph-fit.tex"))
+```
+
+Assess Concordance Index of Model
+
+```{r}
+concordance(fit)
+```
+
+
+### Quantify Strength of Detection Method as Feature
+
+To assess the importance of detection method relative to other features in predicting survival, the following procedure was performed:
+
+* Compute Concordance Index $\widehat{C}$ for full model above
+* For each variable $X$ in the model:
+    * Fit submodel which uses all variables except for $X$ and determine concordance index $\widehat{C}_{-X}$
+    * Compute $\widehat{\Delta}_X = \widehat{C}-\widehat{C}_{-X}$, the change in concordance when feature $X$ is added to the model
+    * Compute p-value for difference in concordances
+        * $H_0: \Delta_{X} \equiv C - C_{-X} = 0$
+
+```{r}
+bmat <- matrix(c(1,-1),ncol=1)
+res <- matrix(NA_real_,nrow=length(feats),ncol=2)
+for(ii in 1:length(feats)){
+  fm_sub <- as.formula(paste0(resp,"~",paste0(feats[-ii],collapse="+")))
+  fit_sub <- coxph(fm_sub,data=dat_sub)
+  a <- concordance(fit,fit_sub)
+  se <- sqrt(t(bmat)%*%a$var%*%bmat)
+  zstat <- diff(a$concordance)/se
+  res[ii,1] <- diff(rev(a$concordance))
+  res[ii,2] <- 2*pnorm(-abs(zstat))
+}
+
+res <- data.frame(Features=feats,DeltaCIndex=res[,1],pvalue=res[,2])
+
+
+res <- res[order(res[,3]),]
+res[,3] <- scales::pvalue(res[,3],accuracy=0.00001)
+kbl(res,row.names=FALSE) %>%
+  kable_paper(bootstrap_options="basic",full_width = F)
+```
+
+
+
+
+```{r}
+## fit survival forests to data
+## results reported later in output
+fm <- as.formula(paste0(resp,"~",paste0(feats,collapse="+")))
+fit <- rfsrc(fm,data=dat_sub,importance="permute")
+imp_full <- fit$importance
+```
+
+
+
+
+
+
+
+## Cancer Cases within 4 Years
+
+The previous analysis is repeated but restricting analysis to lung cancers diagnosed within 4 years of randomization. These 4 years include 3 years of screening (4 total screenings at years 0,1,2 and 3) in the intervention group followed by 1 year of follow up.
+
+
+```{r}
+dat_sub <- dat_sub[dat_sub$lung_cancer_diagdays<365.25*4,]
+```
+
+### Lung Cancer Deaths
+
+Among patients diagnosed with lung cancer, we compute the fraction that died from lung cancer, fraction died from other causes, and the fraction still alive.
+
+```{r}
+tab <- table(dat_sub$died_lung_cancer)/nrow(dat_sub)
+tab <- as.data.frame(tab)
+colnames(tab) <- c("Cause of Death","Fraction")
+kbl(tab) %>%
+  kable_paper(bootstrap_options="striped",full_width = F)
+```
+
+
+
+
+### Lung Cancer Case Summary
+
+```{r message=FALSE}
+add_p_ex1 <-
+  dat_sub[feats] %>%
+  tbl_summary(by = Detection) %>%
+  add_p(test = list(all_categorical() ~ "fisher.test.simulate.p.values"))  
+add_p_ex1
+
+
+## create huxtable for output
+ht <- as_hux_table(add_p_ex1)
+huxtable::bottom_padding(ht) <- 0
+huxtable::top_padding(ht) <- 0
+huxtable::right_padding(ht) <- 0
+huxtable::caption(ht) <- "Characteristics of Lung cancers detected in PLCO by Detection Method."
+huxtable::label(ht) <- "tab:table1-within4"
+
+## convert to latex
+ht_latex <- ht %>% huxtable::to_latex()
+## remove some formatting
+ht_latex <- gsub("```{=latex}","",ht_latex,fixed=TRUE)
+ht_latex <- gsub("```","",ht_latex,fixed=TRUE)
+cat(ht_latex,file=paste0(outf,"table1-within4.tex"))
+```
+
+
+
+### Lung Cancer Survival
+
+
+```{r fig.height=6.5,fig.width=7,align="center"}
+fit  <- survfit(Surv(DD_years,is_dead)~Detection,data=dat_sub)
+p1 <- ggsurvplot(fit,data=dat_sub,risk.table=TRUE,ylim=c(0,1),legend.labs=levels(dat_sub$Detection),
+                legend.title="",pval = TRUE,legend="none",pval.coord=c(6,0.8),
+                xlim=xlims,break.x.by=break.x.by)
+p1[[1]] <- p1[[1]] + theme_grey() + theme(legend.position="top") + xlab("Time (years)")
+print(p1)
+
+pdf(paste0(outf,"km-overall-within4.pdf"),width=6,height=7,onefile=FALSE)
+print(p1)
+invisible(dev.off())
+```
+
+
+### Lung Cancer Survival by Stage
+
+Survival is much better for screen detected after controlling for stage.
+
+```{r fig.width=6,fig.height=6,message=FALSE,warning=FALSE,fig.align="center"}
+fit  <- survfit(Surv(DD_years,is_dead)~Detection,data=dat_sub)
+p2 <- ggsurvplot_facet(fit,data=dat_sub,risk.table=TRUE,ylim=c(0,1),short.panel.labs=TRUE,
+                legend.title="",pval = TRUE,facet.by="Stage",pval.coord=c(6,0.8),
+                break.x.by=break.x.by,xlim=xlims)
+p2 <- p2 + theme_grey() + theme(legend.position="top") + xlab("Time (years)")
+print(p2)
+
+pdf(paste0(outf,"km-bystage-within4.pdf"),width=6,height=6)
+print(p2)
+invisible(dev.off())
+```
+
+```{r}
+## determine median by detection method for stage 1
+fit  <- survfit(Surv(DD_years,is_dead)~Detection,data=dat_sub,subset=Stage=="Stage I")
+fit
+```
+
+```{r}
+p <- plot_grid(p1$plot, p2, labels = c('a)', 'b)'), label_size = 12)
+pdf(paste0(outf,"km-merged-within4.pdf"),width=10,height=5)
+print(p)
+invisible(dev.off())
+```
+
+
+### Prediction Models
+
+Fit Cox PH model to predict survival. Detection Method is significant even after controlling for age, stage, histology, etc.
+
+```{r}
+## delete observations with any missingness in these variables
+fm <- as.formula(paste0(resp,"~",paste0(feats,collapse="+")))
+fit <- coxph(fm,data=dat_sub)
+out <- tbl_regression(fit)
+out
+
+
+ht <- as_hux_table(out)
+huxtable::bottom_padding(ht) <- 0
+huxtable::top_padding(ht) <- 0
+huxtable::right_padding(ht) <- 0
+huxtable::top_padding(ht) <- 0
+huxtable::caption(ht) <- "Multivariate Cox PH model to predict overall survival following diagnosis with lung cancer."
+huxtable::label(ht) <- "tab:coxph-fit-within4"
+
+
+## convert to latex
+ht_latex <- ht %>% huxtable::to_latex()
+## remove some formatting
+ht_latex <- gsub("```{=latex}","",ht_latex,fixed=TRUE)
+ht_latex <- gsub("```","",ht_latex,fixed=TRUE)
+cat(ht_latex,file=paste0(outf,"coxph-fit-within4.tex"))
+```
+
+Assess Concordance Index of Model
+
+```{r}
+concordance(fit)
+```
+
+
+
+
+
+
+
+### Quantify Strength of Detection Method as Feature
+
+To assess the importance of detection method relative to other features in predicting survival, the following procedure was performed:
+
+* Compute Concordance Index $\widehat{C}$ for full model above
+* For each variable $X$ in the model:
+    * Fit submodel which uses all variables except for $X$ and determine concordance index $\widehat{C}_{-X}$
+    * Compute $\widehat{\Delta}_X = \widehat{C}-\widehat{C}_{-X}$, the change in concordance when feature $X$ is added to the model
+    * Compute p-value for difference in concordances
+        * $H_0: \Delta_{X} \equiv C - C_{-X} = 0$
+
+```{r}
+bmat <- matrix(c(1,-1),ncol=1)
+res <- matrix(NA_real_,nrow=length(feats),ncol=2)
+for(ii in 1:length(feats)){
+  fm_sub <- as.formula(paste0(resp,"~",paste0(feats[-ii],collapse="+")))
+  fit_sub <- coxph(fm_sub,data=dat_sub)
+  a <- concordance(fit,fit_sub)
+  se <- sqrt(t(bmat)%*%a$var%*%bmat)
+  zstat <- diff(a$concordance)/se
+  res[ii,1] <- diff(rev(a$concordance))
+  res[ii,2] <- 2*pnorm(-abs(zstat))
+}
+
+res <- data.frame(Features=feats,DeltaCIndex=res[,1],pvalue=res[,2])
+
+
+res <- res[order(res[,3]),]
+res[,3] <- scales::pvalue(res[,3],accuracy=0.00001)
+kbl(res,row.names=FALSE) %>%
+  kable_paper(bootstrap_options="basic",full_width = F)
+```
+
+
+
+
+## Survival Forests
+
+Random Survival Forests are fit to the full and restricted cohorts. Variable importance measures are computed to assess how important method of detection is relative to other prognostic variables.
+
+```{r}
+fm <- as.formula(paste0(resp,"~",paste0(feats,collapse="+")))
+fit <- rfsrc(fm,data=dat_sub,importance="permute")
+imp_sub <- fit$importance
+```
+
+
+
+```{r}
+res <- cbind("4-Year Cohort"=imp_sub,"Extended Cohort"=imp_full)
+res <- round(res,5)
+res <- res[order(res[,1],decreasing=TRUE),]
+kbl(res) %>%
+  kable_paper(bootstrap_options="striped",full_width = F)
+```
+
+```{r}
+## make nice output
+caption <- "Permutation Variable Importance in Random Survival Forests Models. Detection is the second most important variable, after Stage, in the 4-Year Cohort. In the Extended Cohort, Detection is more important than both Sex and Smoked. These results show that method of detection has independent prognostic value in models other than CoxPH.\\label{tab:varimp}"
+tab <- kbl(res,booktabs=TRUE,format="latex",escape=FALSE,caption=caption)
+save_kable(tab,file=paste0(outf,"varimp.tex"))
+```
+
+
