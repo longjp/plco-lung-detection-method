@@ -17,8 +17,14 @@ Code to generate all figures and tables in the manuscript is contained in the fi
 
 This code creates a .html file and outputs figures and tables to the folder:
 
+```
 20230126-plco-lung-report/
+```
+
 
 ## Obtaining the Data
 
-PLCO Lung data is needed to run the code and reproduce the results.To reproduce the results in the paper, you wi
+* PLCO Lung data is needed to run the code and reproduce the results.
+* PLCO Data may be requested from the [Cancer Data Access System](https://cdas.cancer.gov/)
+* Request to obtain the same data as was used in [PLCO Project 808](https://cdas.cancer.gov/approved-projects/3140/) (this project)
+* After unzipping files in the folder data/, the 20230126-plco-lung-report.Rmd can generate results.
