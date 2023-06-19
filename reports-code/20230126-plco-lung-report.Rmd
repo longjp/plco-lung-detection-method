@@ -231,15 +231,6 @@ fisher.test.simulate.p.values <- function(data, variable, by, ...) {
 }
 ```
 
-```{r}
-### determine longest follow up time
-summary(dat$DD_years)
-
-
-summary(dat$lung_cancer_diagdays/365.25)
-```
-
-
 ## Intervention versus Control Demographic Table
 
 ```{r message=FALSE}
@@ -340,7 +331,7 @@ huxtable::bottom_padding(ht) <- 0
 huxtable::top_padding(ht) <- 0
 huxtable::right_padding(ht) <- 0
 #huxtable::left_padding(ht) <- 0
-huxtable::caption(ht) <- "Characteristics of Lung cancers detected in PLCO by Detection Method for Extended Cohort."
+huxtable::caption(ht) <- "Characteristics of lung cancers detected in PLCO for Extended Cohort."
 huxtable::label(ht) <- "tab:table1"
 huxtable::number_format(ht) <- NA
 
@@ -396,6 +387,24 @@ pdf(paste0(outf,"km-merged.pdf"),width=10,height=5)
 print(p)
 invisible(dev.off())
 ```
+
+```{r warning=FALSE}
+## by stage with stage as early (I,II) or late (III,IV)
+dat_sub$StageB <- rep(NA_character_,nrow(dat_sub))
+dat_sub$StageB[dat_sub$Stage %in% c("Stage I","Stage II")] <- "Stage I/II"
+dat_sub$StageB[dat_sub$Stage %in% c("Stage III","Stage IV")] <- "Stage III/IV"
+fit  <- survfit(Surv(DD_years,is_dead)~Detection,data=dat_sub)
+p2 <- ggsurvplot_facet(fit,data=dat_sub,risk.table=TRUE,ylim=c(0,1),short.panel.labs=TRUE,
+                legend.title="",pval = TRUE,facet.by="StageB",pval.coord=c(6,0.8),
+                break.x.by=break.x.by,xlim=xlims)
+p2 <- p2 + theme_grey() + theme(legend.position="top") + xlab("Time (years)")
+print(p2)
+
+pdf(paste0(outf,"km-bystage-binary.pdf"),width=7.5,height=4)
+print(p2)
+invisible(dev.off())
+```
+
 
 ```{r}
 ## what fraction of lung cancer patients die of disease
@@ -526,7 +535,7 @@ ht <- as_hux_table(add_p_ex1)
 huxtable::bottom_padding(ht) <- 0
 huxtable::top_padding(ht) <- 0
 huxtable::right_padding(ht) <- 0
-huxtable::caption(ht) <- "Characteristics of Lung cancers detected in PLCO by Detection Method."
+huxtable::caption(ht) <- "Characteristics of lung cancers detected in PLCO."
 huxtable::label(ht) <- "tab:table1-within4"
 
 ## convert to latex
@@ -535,6 +544,31 @@ ht_latex <- ht %>% huxtable::to_latex()
 ht_latex <- gsub("```{=latex}","",ht_latex,fixed=TRUE)
 ht_latex <- gsub("```","",ht_latex,fixed=TRUE)
 cat(ht_latex,file=paste0(outf,"table1-within4.tex"))
+```
+
+
+```{r message=FALSE}
+add_p_ex1 <-
+  dat_sub[feats] %>%
+  tbl_summary(by = Stage) %>%
+  add_p(test = list(all_categorical() ~ "fisher.test.simulate.p.values"))  
+add_p_ex1
+
+
+## create huxtable for output
+ht <- as_hux_table(add_p_ex1)
+huxtable::bottom_padding(ht) <- 0
+huxtable::top_padding(ht) <- 0
+huxtable::right_padding(ht) <- 0
+huxtable::caption(ht) <- "Variables distributions by Stage at Detection."
+huxtable::label(ht) <- "tab:table1-stage-within4"
+
+## convert to latex
+ht_latex <- ht %>% huxtable::to_latex()
+## remove some formatting
+ht_latex <- gsub("```{=latex}","",ht_latex,fixed=TRUE)
+ht_latex <- gsub("```","",ht_latex,fixed=TRUE)
+cat(ht_latex,file=paste0(outf,"table1-stage-within4.tex"))
 ```
 
 
@@ -572,6 +606,25 @@ pdf(paste0(outf,"km-bystage-within4.pdf"),width=6,height=6)
 print(p2)
 invisible(dev.off())
 ```
+
+
+```{r warning=FALSE}
+## by stage with stage as early (I,II) or late (III,IV)
+dat_sub$StageB <- rep(NA_character_,nrow(dat_sub))
+dat_sub$StageB[dat_sub$Stage %in% c("Stage I","Stage II")] <- "Stage I/II"
+dat_sub$StageB[dat_sub$Stage %in% c("Stage III","Stage IV")] <- "Stage III/IV"
+fit  <- survfit(Surv(DD_years,is_dead)~Detection,data=dat_sub)
+p2 <- ggsurvplot_facet(fit,data=dat_sub,risk.table=TRUE,ylim=c(0,1),short.panel.labs=TRUE,
+                legend.title="",pval = TRUE,facet.by="StageB",pval.coord=c(6,0.8),
+                break.x.by=break.x.by,xlim=xlims)
+p2 <- p2 + theme_grey() + theme(legend.position="top") + xlab("Time (years)")
+print(p2)
+
+pdf(paste0(outf,"km-bystage-binary-within4.pdf"),width=7.5,height=4)
+print(p2)
+invisible(dev.off())
+```
+
 
 ```{r}
 ## determine median by detection method for stage 1
