@@ -2,9 +2,9 @@
 
 This repository contains code used to produce plots and tables in the paper
 
-```
-[Long, J.P. and Shen, Y., 2023. Detection method has independent prognostic significance in the PLCO lung screening trial. Scientific reports, 13(1), p.13382.](https://rdcu.be/dskKX)
-```
+
+Long, J.P. and Shen, Y., 2023. Detection method has independent prognostic significance in the PLCO lung screening trial. Scientific reports, 13(1), p.13382. [pdf](https://rdcu.be/dskKX)
+
 
 This study was conducted under [PLCO Project 808](https://cdas.cancer.gov/approved-projects/3140/)
 
