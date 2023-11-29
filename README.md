@@ -1,8 +1,10 @@
 # Prognostic Value of Method of Detection in Lung Cancer
 
-This repository contains code used to produce plots and tables in the manuscript 
+This repository contains code used to produce plots and tables in the paper
 
-**"Detection Method Has Independent Prognostic Significance in the PLCO Lung Screening Trial" by James P. Long and Yu Shen. 2023+.**
+```
+[Long, J.P. and Shen, Y., 2023. Detection method has independent prognostic significance in the PLCO lung screening trial. Scientific reports, 13(1), p.13382.](https://rdcu.be/dskKX)
+```
 
 This study was conducted under [PLCO Project 808](https://cdas.cancer.gov/approved-projects/3140/)
 
